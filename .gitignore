@@ -1,0 +1,35 @@
+# Build outputs
+/ad14n_voice_toy_objs/
+/obj/
+/app/post_build/
+
+# Object and dependency files
+*.o
+*.d
+*.elf
+*.bin
+*.fw
+*.ufw
+*.lst
+*.map
+*.sym
+*.symbol.txt
+
+# IDE and generated project state
+/.vscode/
+*.depend
+*.layout
+*.cbp
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*~
+
+# Windows noise
+Thumbs.db
+Desktop.ini
+
