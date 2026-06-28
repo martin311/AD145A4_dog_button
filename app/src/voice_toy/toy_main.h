@@ -23,4 +23,5 @@ extern bool Sys_IRInput;
 extern u16 Input_Number;
 int common_msg_deal(int *msg);
 void app_next_mode(void);
+void debug_led_record_set(u8 on);
 #endif

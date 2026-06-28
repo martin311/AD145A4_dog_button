@@ -9,7 +9,7 @@
 #define DISABLE								0
 
 /*---------UART Configuration---------------*/
-#define UART_TX_OUTPUT_CH_EN        DISABLE
+#define UART_TX_OUTPUT_CH_EN        ENABLE
 #define UART_OUTPUT_CH_PORT			IO_PORTA_04
 
 /*---------KEY Configuration---------------*/
@@ -29,6 +29,10 @@
 
 /*---------KEY VOICE Configuration---------------*/
 #define KEY_VOICE_EN   				0
+
+/*---------Audio Output Configuration---------------*/
+/* 1: no extra gain. 2/3... amplify playback PCM before clipping. */
+#define TCFG_DAC_SOFT_GAIN           2
 
 /*---------power wakeup io---------------*/
 #define POWER_WAKEUP_IO				IO_PORTA_00

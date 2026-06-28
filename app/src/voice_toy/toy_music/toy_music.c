@@ -12,6 +12,8 @@
 #include "tick_timer_driver.h"
 #include "device_mge.h"
 #include "bsp_loop.h"
+#include "toy_record.h"
+#include "wdt.h"
 
 #include "decoder_api.h"
 #include "decoder_msg_tab.h"
@@ -22,7 +24,11 @@
 #include "log.h"
 
 #define TFG_EXT_FLASH_EN        1
-#define DEMO_KEY_IO             IO_PORTA_03
+#define PLAY_KEY_IO             IO_PORTA_03
+#define RECORD_KEY_IO           IO_PORTA_02
+#define RECORD_LONG_PRESS_TICKS HZ
+#define RECORD_MAX_TICKS        (5 * HZ)
+#define RECORD_KEY_STABLE_CNT   2
 
 #if SIMPLE_DEC_EN
 
@@ -31,6 +37,13 @@ static play_control demo_ext_pctl AT(.toy_music_data);
 static dp_buff demo_ext_dp AT(.toy_music_data);
 static u8 demo_ext_mounted AT(.toy_music_data);
 static u8 demo_ext_playing AT(.toy_music_data);
+static Encode_Control demo_record_obj;
+static dec_obj *demo_record_dec_obj;
+static u8 demo_has_record;
+static u8 demo_recording;
+static u8 demo_record_stop_requested;
+static u8 demo_record_playing;
+static u32 demo_record_start_jiffies;
 
 #define INR_DIR_NUM   5
 static dp_buff inr_dec_dp[INR_DIR_NUM] AT(.toy_music_data);
@@ -65,10 +78,15 @@ static const char dir_ext_vm_tab[EXT_DIR_NUM] = {
 
 static void demo_key_init(void)
 {
-    gpio_set_pull_up(DEMO_KEY_IO, 1);
-    gpio_set_pull_down(DEMO_KEY_IO, 0);
-    gpio_set_die(DEMO_KEY_IO, 1);
-    gpio_set_direction(DEMO_KEY_IO, 1);
+    gpio_set_pull_up(PLAY_KEY_IO, 1);
+    gpio_set_pull_down(PLAY_KEY_IO, 0);
+    gpio_set_die(PLAY_KEY_IO, 1);
+    gpio_set_direction(PLAY_KEY_IO, 1);
+
+    gpio_set_pull_up(RECORD_KEY_IO, 1);
+    gpio_set_pull_down(RECORD_KEY_IO, 0);
+    gpio_set_die(RECORD_KEY_IO, 1);
+    gpio_set_direction(RECORD_KEY_IO, 1);
 }
 
 static u8 demo_key_pressed_once(void)
@@ -76,7 +94,7 @@ static u8 demo_key_pressed_once(void)
     static u8 last_level = 1;
     static u8 stable_level = 1;
     static u8 stable_cnt = 0;
-    u8 level = gpio_read(DEMO_KEY_IO);
+    u8 level = gpio_read(PLAY_KEY_IO);
 
     if (level == last_level) {
         if (stable_cnt < 5) {
@@ -85,15 +103,166 @@ static u8 demo_key_pressed_once(void)
     } else {
         stable_cnt = 0;
         last_level = level;
+        log_info("PA3 raw:%d\n", level);
     }
 
-    if ((stable_cnt >= 5) && (stable_level != level)) {
+    if ((stable_cnt >= RECORD_KEY_STABLE_CNT) && (stable_level != level)) {
         stable_level = level;
         if (0 == stable_level) {
             return 1;
         }
     }
     return 0;
+}
+
+static void demo_record_stop(void)
+{
+    if ((!demo_recording) && (!demo_record_stop_requested)) {
+        return;
+    }
+
+    demo_recording = 0;
+    demo_record_stop_requested = 1;
+    debug_led_record_set(0);
+    log_info("demo record stopping\n");
+    record_encode_stop(&demo_record_obj);
+    demo_has_record = 1;
+    demo_record_stop_requested = 0;
+    log_info("demo record stop\n");
+}
+
+static void demo_record_start(void)
+{
+    if (demo_recording || demo_record_stop_requested) {
+        return;
+    }
+
+    if (demo_record_dec_obj) {
+        decoder_stop(demo_record_dec_obj, NEED_WAIT);
+        demo_record_dec_obj = NULL;
+    }
+    if (demo_record_playing) {
+        encode_file_fs_close(&demo_record_obj);
+        demo_record_playing = 0;
+    }
+    if (demo_ext_playing) {
+        decoder_stop(demo_ext_pctl.p_dec_obj, NEED_WAIT);
+        demo_ext_pctl.p_dec_obj = NULL;
+        demo_ext_playing = 0;
+    }
+
+    encode_file_fs_close(&demo_record_obj);
+    memset(&demo_record_obj, 0, sizeof(demo_record_obj));
+    if (0 == record_encode_start(&demo_record_obj)) {
+        demo_recording = 1;
+        demo_record_stop_requested = 0;
+        demo_record_start_jiffies = jiffies;
+        debug_led_record_set(1);
+        log_info("demo record start\n");
+    } else {
+        debug_led_record_set(0);
+        log_error("demo record start err\n");
+    }
+}
+
+static void demo_record_key_scan(void)
+{
+    static u8 last_level = 1;
+    static u8 stable_level = 1;
+    static u8 stable_cnt = 0;
+    static u8 long_started = 0;
+    static u32 press_jiffies = 0;
+    u8 level = gpio_read(RECORD_KEY_IO);
+
+    if (level == last_level) {
+        if (stable_cnt < 5) {
+            stable_cnt++;
+        }
+    } else {
+        stable_cnt = 0;
+        last_level = level;
+        log_info("PA2 raw:%d rec:%d\n", level, demo_recording);
+    }
+
+    if (demo_recording && (!demo_record_stop_requested) && (1 == level)) {
+        demo_record_stop_requested = 1;
+        log_info("record key release\n");
+        demo_record_stop();
+        stable_level = 1;
+        long_started = 0;
+        return;
+    }
+
+    if ((stable_cnt >= RECORD_KEY_STABLE_CNT) && (stable_level != level)) {
+        stable_level = level;
+        if (0 == stable_level) {
+            press_jiffies = jiffies;
+            long_started = 0;
+        } else {
+            if (long_started && (!demo_record_stop_requested)) {
+                demo_record_stop_requested = 1;
+                demo_record_stop();
+            }
+            long_started = 0;
+        }
+    }
+
+    if ((0 == stable_level) && (!long_started) &&
+        time_after(jiffies, press_jiffies + RECORD_LONG_PRESS_TICKS)) {
+        long_started = 1;
+        log_info("record key long\n");
+        demo_record_start();
+    }
+
+    if (demo_recording && (!demo_record_stop_requested) &&
+        time_after(jiffies, demo_record_start_jiffies + RECORD_MAX_TICKS)) {
+        demo_record_stop_requested = 1;
+        log_info("record max timeout\n");
+        demo_record_stop();
+    }
+
+    if (demo_recording || demo_record_stop_requested) {
+        wdt_clear();
+    }
+}
+
+static void demo_record_play(void)
+{
+    if (demo_recording || demo_record_stop_requested) {
+        log_info("ignore play while recording\n");
+        return;
+    }
+
+    if (demo_record_dec_obj) {
+        decoder_stop(demo_record_dec_obj, NEED_WAIT);
+        demo_record_dec_obj = NULL;
+    }
+    if (demo_record_playing) {
+        encode_file_fs_close(&demo_record_obj);
+        demo_record_playing = 0;
+        return;
+    }
+    if (demo_ext_playing) {
+        decoder_stop(demo_ext_pctl.p_dec_obj, NEED_WAIT);
+        demo_ext_pctl.p_dec_obj = NULL;
+        demo_ext_playing = 0;
+    }
+
+    if (!demo_has_record) {
+        log_info("try latest norfs record\n");
+        demo_record_obj.dev_index = EXT_FLASH_RW;
+        strcpy(demo_record_obj.fs_name, "norfs");
+    }
+    demo_record_dec_obj = norfs_enc_file_decode(&demo_record_obj, BIT_A | BIT_UMP3);
+    if (NULL != demo_record_dec_obj) {
+        demo_has_record = 1;
+        demo_record_playing = 1;
+        log_info("demo record play\n");
+    } else {
+        encode_file_fs_close(&demo_record_obj);
+        demo_has_record = 0;
+        log_error("demo record play err\n");
+    }
 }
 
 static u32 demo_ext_song_mount(void)
@@ -154,16 +323,27 @@ void toy_music_app(void)
     Sys_IRInput = 1;
 #endif
     int msg[2], err;
-    key_table_sel(music_msg_filter);
+    key_table_sel(NULL);
     decoder_init();
     demo_key_init();
+    debug_led_record_set(0);
 
     memset(&dec_pctl[0], 0, sizeof(dec_pctl));      //初始化dec_pctl[0]和dec_pctl[1]
     memset(&inr_dec_dp[0], 0, sizeof(inr_dec_dp));  //初始化dec_dp[0]和dec_dp[1]
+    memset(&demo_record_obj, 0, sizeof(demo_record_obj));
+    demo_record_dec_obj = NULL;
+    demo_has_record = 0;
+    demo_recording = 0;
+    demo_record_stop_requested = 0;
+    demo_record_playing = 0;
+    demo_record_start_jiffies = 0;
 #if TFG_EXT_FLASH_EN
     memset(&ext_dec_dp[0], 0, sizeof(ext_dec_dp));
 #endif
 
+    /* Stage 1 only records and plays the saved recording. Do not mount
+     * /dir_song or built-in A resources in this mode. */
+#if 0
     dec_pctl[0].dev_index   = INNER_FLASH_RO;
     dec_pctl[0].findex      = 1;
     dec_pctl[0].loop        = 0;
@@ -193,6 +373,7 @@ void toy_music_app(void)
     dec_pctl[1].pdir        = (void *)&dir_tab_a[0];
     dec_pctl[1].dir_total   = sizeof(dir_tab_a) / 4;
     simple_dev_fs_mount(&dec_pctl[1]);
+#endif
 
     /* dec_pctl[2].dev_index   = INNER_FLASH_RO; */
     /* dec_pctl[2].findex      = 1; */
@@ -201,7 +382,8 @@ void toy_music_app(void)
     /* dec_pctl[2].dir_total   = sizeof(dir_inr_tab) / 4; */
     /* simple_dev_fs_mount(&dec_pctl[2]); */
 
-    post_msg(1, MSG_PLAY_FILE1);
+    /* First-stage flow: do not auto-play when there is no recording. */
+    /* post_msg(1, MSG_PLAY_FILE1); */
     /* post_msg(1, MSG_PLAY_FILE2); */
     /* post_msg(1, MSG_A_PLAY); */
     /* simple_play_file_bypath(&dec_pctl[0], "/dir_song/so002.f1b"); */
@@ -213,48 +395,57 @@ void toy_music_app(void)
             msg[0] = NO_MSG;
             log_info("get msg err 0x%x\n", err);
         }
-        if (demo_key_pressed_once()) {
-            demo_ext_song_toggle();
+        demo_record_key_scan();
+        if (!demo_recording && demo_key_pressed_once()) {
+            log_info("PA3 play key\n");
+            demo_record_play();
         }
 
         switch (msg[0]) {
         case MSG_PLAY_FILE1:
-            log_info("MSG_PLAY_FILE1\n");
-            err = play_one_file(&dec_pctl[0]);
-            if (err) {
-                play_next_file(&dec_pctl[0]);
-            }
+            log_info("ignore MSG_PLAY_FILE1\n");
             break;
 
         case MSG_PP:
-            log_info("MSG_PP\n");
-            decoder_pause(dec_pctl[0].p_dec_obj);
+            log_info("ignore MSG_PP\n");
             break;
         case MSG_PREV_FILE:
-            log_info("MSG_PREV_FILE\n");
-            play_prev_file(&dec_pctl[0]);
+            log_info("ignore MSG_PREV_FILE\n");
             break;
         case MSG_NEXT_FILE:
-            log_info("MSG_NEXT_FILE\n");
-            play_next_file(&dec_pctl[0]);
+            log_info("ignore MSG_NEXT_FILE\n");
             break;
 
         case MSG_NEXT_DIR:
-            log_info("MSG_NEXT_DIR\n");
-            simple_next_dir(&dec_pctl[0]);
+            log_info("ignore MSG_NEXT_DIR\n");
             break;
 
 #if TFG_EXT_FLASH_EN
         case MSG_NEXT_DEVICE:
-            simple_switch_device(&dec_pctl[0]);
+            log_info("ignore MSG_NEXT_DEVICE\n");
             break;
 #endif
+        case MSG_WFILE_FULL:
+            log_info("MSG_WFILE_FULL\n");
+            demo_record_stop();
+            break;
+
         case MSG_F1A1_FILE_ERR:
         case MSG_MP3_FILE_ERR:
         case MSG_WAV_FILE_ERR:
+        case MSG_A_FILE_ERR:
         case MSG_F1A1_FILE_END:
         case MSG_MP3_FILE_END:
         case MSG_WAV_FILE_END:
+        case MSG_A_FILE_END:
+            if (demo_record_playing) {
+                log_info("demo record end or err\n");
+                decoder_stop(demo_record_dec_obj, NEED_WAIT);
+                demo_record_dec_obj = NULL;
+                encode_file_fs_close(&demo_record_obj);
+                demo_record_playing = 0;
+                break;
+            }
             if (demo_ext_playing) {
                 log_info("demo ext song end or err\n");
                 decoder_stop(demo_ext_pctl.p_dec_obj, NEED_WAIT);
@@ -262,19 +453,11 @@ void toy_music_app(void)
                 demo_ext_playing = 0;
                 break;
             }
-            log_info("FILE END OR ERR\n");
-            decoder_stop(dec_pctl[0].p_dec_obj, NEED_WAIT);
-            play_next_file(&dec_pctl[0]);
+            log_info("ignore file end or err\n");
             break;
 
         case MSG_A_PLAY:
-            log_info("MSG_A_PLAY\n");
-            play_one_file(&dec_pctl[1]);
-            break;
-        case MSG_A_FILE_END:
-        case MSG_A_FILE_ERR:
-            log_info("A FILE END OR ERR\n");
-            decoder_stop(dec_pctl[1].p_dec_obj, NEED_WAIT);
+            log_info("ignore MSG_A_PLAY\n");
             break;
 
         /* case MSG_PLAY_FILE2: */
@@ -298,18 +481,24 @@ void toy_music_app(void)
         case MSG_CHANGE_WORK_MODE:
             goto __toy_music_exit;
         case MSG_500MS:
-            if ((MUSIC_PLAY != get_decoder_status(dec_pctl[0].p_dec_obj)) && \
-                (MUSIC_PLAY != get_decoder_status(dec_pctl[1].p_dec_obj))) {
-                vm_pre_erase();
-                /* Keep the app awake while PA8 is used as a run indicator. */
-                /* sys_idle_deal(-2); */
-            }
+            vm_pre_erase();
+            /* Keep the app awake while PA8 is used as a run indicator. */
+            /* sys_idle_deal(-2); */
+            break;
         default:
             common_msg_deal(&msg[0]);
             break;
         }
     }
 __toy_music_exit:
+    demo_record_stop();
+    if (demo_record_playing) {
+        decoder_stop(demo_record_dec_obj, NEED_WAIT);
+        demo_record_dec_obj = NULL;
+        encode_file_fs_close(&demo_record_obj);
+        demo_record_playing = 0;
+    }
+    debug_led_record_set(0);
     if (demo_ext_playing) {
         decoder_stop(demo_ext_pctl.p_dec_obj, NEED_WAIT);
         demo_ext_playing = 0;
@@ -318,18 +507,6 @@ __toy_music_exit:
         simple_dev_fs_close(&demo_ext_pctl);
         demo_ext_mounted = 0;
     }
-    decoder_stop(dec_pctl[0].p_dec_obj, NEED_WAIT);
-#if SIMPLE_DEC_BP_ENABLE
-    if (true == get_dp(dec_pctl[0].p_dec_obj, dec_pctl[0].pdp)) {
-        vm_write(\
-                 dec_pctl[0].p_vm_tab[dec_pctl[0].dir_index], \
-                 dec_pctl[0].pdp,                            \
-                 sizeof(dp_buff));
-    }
-#endif
-    simple_dev_fs_close(&dec_pctl[0]);
-    decoder_stop(dec_pctl[1].p_dec_obj, NEED_WAIT);
-    simple_dev_fs_close(&dec_pctl[1]);
 #if KEY_IR_EN
     Sys_IRInput = 0;
 #endif

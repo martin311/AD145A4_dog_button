@@ -18,16 +18,16 @@
 #define DECODER_UMP3_EN 1
 
 //  MIDI格式解码
-#define DECODER_MIDI_EN 1
+#define DECODER_MIDI_EN 0
 
 //  MIDI琴格式解码
-#define DECODER_MIDI_KEYBOARD_EN 1
+#define DECODER_MIDI_KEYBOARD_EN 0
 
 //  mp3格式压缩
-#define ENCODER_MP3_EN 1
+#define ENCODER_MP3_EN 0
 
 //  ump3格式压缩
-#define ENCODER_UMP3_EN 1
+#define ENCODER_UMP3_EN 0
 
 //  a格式压缩
 #define ENCODER_A_EN 1
@@ -36,17 +36,17 @@
 #define HAS_MIO_EN 0
 
 //  SRC变采样功能使能
-#define HAS_HW_SRC_EN 1 //  硬件SRC
+#define HAS_HW_SRC_EN 1 //  硬件SRC 音频采样率转换
 
 //  ANS功能使能
 #define ANS_EN 0
 
 //  解码SPEED功能使能
-#define AUDIO_SPEED_EN 1
+#define AUDIO_SPEED_EN 0
 
 //  陷波/移频啸叫抑制使能
-#define NOTCH_HOWLING_EN 1
-#define PITCHSHIFT_HOWLING_EN 1
+#define NOTCH_HOWLING_EN 0
+#define PITCHSHIFT_HOWLING_EN 0
 
 //  变声功能使能
 #define VO_PITCH_EN 0
@@ -55,16 +55,16 @@
 #define VO_CHANGER_EN 0
 
 //  ECHO混响功能使能
-#define ECHO_EN 1
+#define ECHO_EN 0
 
 //  EQ功能使能
 #define PCM_EQ_EN 0
 
 //  APP应用使能
 #define RECORD_MODE_EN 1 //  录音应用模式
-#define LINEIN_MODE_EN 1 //  Linein应用模式
+#define LINEIN_MODE_EN 0 //  Linein应用模式
 #define SIMPLE_DEC_EN 1 //  简单解码应用模式
-#define LOUDSPEAKER_EN 1 //  扩音应用模式
+#define LOUDSPEAKER_EN 0 //  扩音应用模式
 
 //  驱动使能
 #define UART_UPDATE_EN 0 //  串口带电升级驱动使能

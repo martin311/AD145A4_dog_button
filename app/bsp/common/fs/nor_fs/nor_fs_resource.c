@@ -46,11 +46,15 @@ void norfs_init_api(void)
     u32 sector_size;
     u32 sector_bit = 12;
 
+#if EXT_FLASH_EN
+    sector_start = 0;
+    sector_end = ((2 * 1024 * 1024) >> sector_bit) - 1;
+#else
     sector_size = (1 << sector_bit);
     sector_start = (boot_info.vm.vm_saddr + sector_size - 1) / sector_size;
     sector_end = (boot_info.vm.vm_size + boot_info.vm.vm_saddr) / sector_size;
-
     sector_end--;
+#endif
 
     norfs_init(sector_start, sector_end, sector_bit); //1<<12 = 4K
 }

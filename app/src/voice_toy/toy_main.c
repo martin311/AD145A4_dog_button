@@ -19,6 +19,7 @@
 #include "vm_api.h"
 #include "vm_sfc.h"
 #include "usb/usr/usb_audio_interface.h"
+#include "wdt.h"
 
 #define LOG_TAG_CONST       NORM
 #define LOG_TAG             "[normal]"
@@ -30,6 +31,7 @@ extern void mdelay(u32 ms);
 
 volatile u8 work_mode;
 static volatile u8 debug_led_ready;
+static volatile u8 debug_led_recording;
 static u8 debug_led_level;
 
 AT(.tick_timer.text.cache.L2)
@@ -52,9 +54,21 @@ void app_timer_loop(void)
     if (cnt >= 1000) {
         cnt = 0;
     }
-    if (debug_led_ready && (0 == (cnt % 500))) {
-        debug_led_level ^= 1;
-        gpio_write(DEBUG_LED_IO, debug_led_level);
+    if (debug_led_ready && debug_led_recording) {
+        wdt_clear();
+        if (0 == (cnt % 500)) {
+            debug_led_level ^= 1;
+            gpio_write(DEBUG_LED_IO, debug_led_level);
+        }
+    }
+}
+
+void debug_led_record_set(u8 on)
+{
+    debug_led_recording = on ? 1 : 0;
+    if (!debug_led_recording) {
+        debug_led_level = 1;
+        gpio_write(DEBUG_LED_IO, 1);
     }
 }
 
@@ -81,8 +95,10 @@ static void user_gpio_init(void)
     gpio_set_pull_up(DEBUG_LED_IO, 0);
     gpio_set_pull_down(DEBUG_LED_IO, 0);
     gpio_set_die(DEBUG_LED_IO, 1);
-    debug_led_level = 0;
-    gpio_set_direction(DEBUG_LED_IO, debug_led_level);
+    debug_led_level = 1;
+    debug_led_recording = 0;
+    gpio_write(DEBUG_LED_IO, 1);
+    gpio_set_direction(DEBUG_LED_IO, 0);
     debug_led_ready = 1;
 }
 
@@ -100,10 +116,11 @@ void app(void)
 
     u8 vol = 0;
     u32 res = vm_read(VM_INDEX_VOL, &vol, sizeof(vol));
-    if ((vol <= 31) && (res == sizeof(vol))) {
-        dac_vol(0, vol);
-        log_info("powerup set vol : %d\n", vol);
+    if ((vol > 31) || (res != sizeof(vol))) {
+        vol = 31;
     }
+    dac_vol(0, vol);
+    log_info("powerup set vol : %d\n", vol);
 
     work_mode = TOY_MUSIC;
     /* work_mode = TOY_MIDI; */

@@ -32,14 +32,14 @@ typedef struct _Encode_Control {
 
 void toy_record_app(void);
 void encode_file_fs_close(Encode_Control *obj);
+void record_encode_stop(Encode_Control *obj);
+int record_encode_start(Encode_Control *obj);
 int norfs_enc_file_create(Encode_Control *obj);
 dec_obj *norfs_enc_file_decode(Encode_Control *obj, u16 dec_type);
 int fatfs_enc_file_create(Encode_Control *obj);
 dec_obj *fatfs_enc_file_decode(Encode_Control *obj, u16 dec_type);
 extern u16 record_key_msg_filter(u8 key_status, u8 key_num, u8 key_type);
 extern void sys_idle_deal(u32 usec);
-static void encode_stop(Encode_Control *obj);
-static int encode_start(Encode_Control *obj);
 
 
 #endif

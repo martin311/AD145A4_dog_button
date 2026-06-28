@@ -60,7 +60,7 @@ dec_obj *norfs_enc_file_decode(Encode_Control *obj, u16 dec_type)
     }
     err = vfs_openbyindex(obj->pfs, &obj->pfile, obj->rec_file_index);
     if (err) {
-        log_info("vfs_createfile err:0x%x\n", err);
+        log_info("vfs_openbyindex err:0x%x idx:%d\n", err, obj->rec_file_index);
         goto __norfs_enc_fs_exit;
     }
 

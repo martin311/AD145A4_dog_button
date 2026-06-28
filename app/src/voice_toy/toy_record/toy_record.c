@@ -22,7 +22,8 @@
 #define LOG_TAG             "[rec]"
 #include "log.h"
 
-#define RECORD_AUDIO_ADC_SR     RECORD_ADC_SR_24K
+#define RECORD_AUDIO_ADC_SR     RECORD_ADC_SR_12K
+extern enc_obj *enc_hdl;
 static Encode_Control record_obj;
 
 void toy_record_app(void)
@@ -48,19 +49,19 @@ void toy_record_app(void)
         switch (msg[0]) {
         case MSG_RECODE_START:
             if (ENC_ING == record_obj.enc_status) {
-                /* 结束录音并播放录音 */
-                encode_stop(&record_obj);
+                /* Stop recording and play it back. */
+                record_encode_stop(&record_obj);
                 post_msg(1, MSG_PP);
             } else {
-                /* 开始录音 */
+                /* Start recording. */
                 decoder_stop(p_dec_obj, NEED_WAIT);
                 encode_file_fs_close(&record_obj);
-                encode_start(&record_obj);
+                record_encode_start(&record_obj);
                 log_info("dev:%d fs_name:%s\n", record_obj.dev_index, record_obj.fs_name);
             }
             break;
         case MSG_PP:
-            encode_stop(&record_obj);
+            record_encode_stop(&record_obj);
             decoder_stop(p_dec_obj, NEED_WAIT);
             if (0 == (strcmp(record_obj.fs_name, "norfs"))) {
                 p_dec_obj = norfs_enc_file_decode(&record_obj, norfs_decode_type);
@@ -85,7 +86,7 @@ void toy_record_app(void)
             break;
         case MSG_WFILE_FULL:
             log_info("MSG_WFILE_FULL\n");
-            encode_stop(&record_obj);
+            record_encode_stop(&record_obj);
             break;
         case MSG_WAV_FILE_END:
         case MSG_MP3_FILE_END:
@@ -115,7 +116,7 @@ void toy_record_app(void)
 __record_app_exit:
     key_table_sel(NULL);
     if (ENC_ING == record_obj.enc_status) {
-        encode_stop(&record_obj);
+        record_encode_stop(&record_obj);
     } else {
         decoder_stop(p_dec_obj, NEED_WAIT);
         encode_file_fs_close(&record_obj);
@@ -130,7 +131,7 @@ void encode_file_fs_close(Encode_Control *obj)
     device_close(obj->dev_index);
 }
 
-static void encode_stop(Encode_Control *obj)
+void record_encode_stop(Encode_Control *obj)
 {
     if (ENC_ING == obj->enc_status) {
         stop_encode(obj->pfile, 0);
@@ -140,7 +141,7 @@ static void encode_stop(Encode_Control *obj)
     audio_adc_off_api();
 }
 
-static int encode_start(Encode_Control *obj)
+int record_encode_start(Encode_Control *obj)
 {
     u32 sr = RECORD_AUDIO_ADC_SR;
     /* u32 sr = dac_sr_read(); */
@@ -152,25 +153,42 @@ static int encode_start(Encode_Control *obj)
     }
 
 #if ENCODER_UMP3_EN
-    obj->dev_index = INNER_FLASH_RW;//内置flash录音
+    obj->dev_index = EXT_FLASH_RW;
     strcpy(obj->fs_name, "norfs");
     err = norfs_enc_file_create(obj);
     if (0 != err) {
         log_info("vfs create 0x%x!\n", err);
+        audio_adc_off_api();
+        encode_file_fs_close(obj);
         return err;
     }
     encoder_io(ump3_encode_api, obj->pfile);
+    if (NULL == enc_hdl) {
+        log_info("encoder start fail!\n");
+        audio_adc_off_api();
+        encode_file_fs_close(obj);
+        return -1;
+    }
 #elif ENCODER_A_EN
-    obj->dev_index = INNER_FLASH_RW;//内置flash录音
+    obj->dev_index = EXT_FLASH_RW;
     strcpy(obj->fs_name, "norfs");
     err = norfs_enc_file_create(obj);
     if (0 != err) {
         log_info("vfs create 0x%x!\n", err);
+        audio_adc_off_api();
+        encode_file_fs_close(obj);
         return err;
     }
     encoder_io(a_encode_api, obj->pfile);
+    if (NULL == enc_hdl) {
+        log_info("encoder start fail!\n");
+        audio_adc_off_api();
+        encode_file_fs_close(obj);
+        return -1;
+    }
 #else
     log_info("no ump3 & a format encoder!\n");
+    audio_adc_off_api();
     return -1;
 #endif
 

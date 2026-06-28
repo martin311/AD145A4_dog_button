@@ -36,7 +36,7 @@ const char MIC_RES_BUILT_IN = 1;
 //10000:NA;     10001:3.5; 10010:6.5; 10011:2.926; 10100:8.5; 10101:3.055; 10110:4.416; 10111:2.686;
 //11000:NA;     11001:2.6; 11010:5.6; 11011:2.208; 11100:7.6; 11101:2.4;   11110:3.73;  11111:1.99;
 //000001:0.85k; 0000001:0.35k
-const char MIC_RES_IN       = 7;    //内置MIC的电阻,低3bit不能为0
+const char MIC_RES_IN       = 11;    //内置MIC的电阻,低3bit不能为0
 const char MIC_RES_OUT      = 8;    //外置MIC的电阻,低3bit不能为0
 const char MIC_0DB          = 1;    //MIC_0db_11V   0:6db   1:0db
 const char MIC_LDO_V        = 2;    //MICLDO_VOLSEL_11V   0:1.8V; 1:2.1V; 2:2.4V; 3:2.7V;

@@ -216,6 +216,9 @@ u32 fill_dac_fill_phy(u8 *buf, u32 len)
             /* t_sp = (t_sp / (MAX_PHY_VOL + 1)) * dac_mge.vol_phy; */
             t_sp = (t_sp * dac_mge.vol_phy) / (MAX_PHY_VOL + 1);
         }
+#if defined(TCFG_DAC_SOFT_GAIN) && (TCFG_DAC_SOFT_GAIN > 1)
+        t_sp *= TCFG_DAC_SOFT_GAIN;
+#endif
         t_sp += sp_buf[sp_cnt];
         dac_sp_handle(t_sp);
         if (t_sp > 32767) {

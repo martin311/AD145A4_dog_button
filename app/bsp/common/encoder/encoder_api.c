@@ -10,6 +10,7 @@
 #include "a_encoder.h"
 #include "mp3_encoder.h"
 #include "app_modules.h"
+#include "wdt.h"
 
 
 #define LOG_TAG_CONST       NORM
@@ -82,32 +83,51 @@ void stop_encode(void *pfile, u32 dlen)
 {
     enc_obj *obj = enc_hdl;
     u32 err;
+    u16 wait_cnt = 0;
     audio_adc_disable();
     STOP_ADC_RUN;
-    log_info("stop encode\n");
+    log_info("stop encode pfile:0x%x\n", pfile);
     if (NULL == enc_hdl) {
         rec_phy_suspend();
+        return;
+    }
+    if (NULL == pfile) {
+        log_info("stop encode no file\n");
+        rec_phy_suspend();
+        enc_hdl = 0;
         return;
     }
     obj->enable |= B_ENC_STOP;
 
     log_info("stop encode A\n");
     while (0 != cbuf_get_data_size(obj->p_ibuf)) {
+        wdt_clear();
         if (obj->enable & B_ENC_FULL) {
+            break;
+        }
+        if (++wait_cnt > 200) {
+            log_info("stop encode input timeout\n");
             break;
         }
         kick_encode_isr();
         delay(100);
     }
 
+    wait_cnt = 0;
     log_info("stop encode C\n");
     while (0 != cbuf_get_data_size(obj->p_obuf)) {
+        wdt_clear();
         if (obj->enable & B_ENC_FULL) {
+            break;
+        }
+        if (++wait_cnt > 200) {
+            log_info("stop encode output timeout\n");
             break;
         }
         kick_wfile_isr();
         delay(100);
     }
+    wdt_clear();
     log_info("stop encode D\n");
     obj->enable &= ~B_ENC_ENABLE;
     HWI_Uninstall(IRQ_SOFT1_IDX);
@@ -115,6 +135,7 @@ void stop_encode(void *pfile, u32 dlen)
 
     u32 flen = dlen;
     err = vfs_ioctl(pfile, FS_IOCTL_FILE_SYNC, (int)&flen);
+    log_info("stop encode sync err:0x%x len:%d\n", err, flen);
     rec_phy_suspend();
     enc_hdl = 0;
 }

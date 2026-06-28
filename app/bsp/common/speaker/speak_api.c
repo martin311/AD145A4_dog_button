@@ -125,10 +125,10 @@ void audio_adc_speaker_start(void)
     cbuf_init(&cbuf_ads_o, &obuf_ads_o[0], sizeof(obuf_ads_o));
 
 
-#if  HOWLING_EN     //陷波抑制啸叫
+#if defined(NOTCH_HOWLING_EN) && (NOTCH_HOWLING_EN)
     p_curr_sound = link_notch_howling_sound(p_curr_sound, &cbuf_ads_o, 0, adc_sr);
 #endif
-#if  HOWLING_EN     //移频抑制啸叫
+#if defined(PITCHSHIFT_HOWLING_EN) && (PITCHSHIFT_HOWLING_EN)
     p_curr_sound = link_pitchshift_howling_sound(p_curr_sound, &cbuf_ads_o, 0, adc_sr);
 #endif
     /*voice_toy工程 混响、voice_pitch、voice_changer、eq资源复用，只能开其中一个，或者自行调整ld文件 */
