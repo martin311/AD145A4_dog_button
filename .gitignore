@@ -1,7 +1,6 @@
 # Build outputs
 /ad14n_voice_toy_objs/
 /obj/
-/app/post_build/
 
 # Object and dependency files
 *.o
@@ -14,6 +13,20 @@
 *.map
 *.sym
 *.symbol.txt
+
+# Generated firmware/package outputs. Keep app/post_build scripts, tools,
+# configs, boot files, and resource folders because they are required to
+# package .fw files.
+/app/post_build/**/*.elf
+/app/post_build/**/*.bin
+/app/post_build/**/*.fw
+/app/post_build/**/*.ufw
+/app/post_build/**/*.lst
+/app/post_build/**/*.map
+/app/post_build/**/*.txt
+/app/post_build/**/*.bc
+/app/post_build/**/*.o
+/app/post_build/**/local.db
 
 # IDE and generated project state
 /.vscode/
@@ -32,4 +45,3 @@
 # Windows noise
 Thumbs.db
 Desktop.ini
-
